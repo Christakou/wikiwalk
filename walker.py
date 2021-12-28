@@ -2,13 +2,11 @@ from dataclasses import dataclass
 import requests
 from bs4 import BeautifulSoup
 from utils import HTMLFilter
+from document_distance import word_vector, page_similarity
+from wikipage import WikiPage
 
-@dataclass
-class WikiPage():
-    title: str
-    text: str
-    links: list
-
+class NoPageException(Exception):
+    pass
 class WikiWalker():
     base_url = "https://en.wikipedia.org/w/api.php"
 
@@ -22,16 +20,17 @@ class WikiWalker():
             "page": f"{page}",
             "format": "json"
         }
+        try:
+            soup = BeautifulSoup(self.session.get(self.base_url,params=params).json()['parse']['text']['*'])
+            links = link_parser(soup.find_all('a', href=True), filtered_out_terms=['category','special','#', 'ISBN'],required_terms=['wiki'])
+            text = soup.text
+            wv = word_vector(text)
 
-        data = self.session.get(self.base_url, params=params).json()
-        soup = BeautifulSoup(self.session.get(self.base_url,params=params).json()['parse']['text']['*'])
-        links = link_parser(soup.find_all('a', href=True), filtered_terms=['category'])
-        text = soup.text
-        word_vector =
+            return WikiPage(text=text,links=links,title=page, word_vector=wv)
+        except KeyError:
+            raise NoPageException
 
-        return WikiPage(text=text,links=links,title=page)
-
-def link_parser(list_of_soups, filtered_terms):
+def link_parser(list_of_soups, filtered_out_terms, required_terms):
     """
 
 
@@ -40,10 +39,9 @@ def link_parser(list_of_soups, filtered_terms):
     """
     response = []
     for soup in list_of_soups:
-        if any([soup.attrs['href'].lower().__contains__(a) for a in filtered_terms]):
+        if any([soup.attrs['href'].lower().__contains__(a) for a in filtered_out_terms]) or any([not soup.attrs['href'].lower().__contains__(b) for b in required_terms]):
             continue
-        response.append({soup.attrs['href']:soup.text})
+        if soup.text == '':
+            continue
+        response.append({'name':soup.text,'href':soup.attrs['href']})
     return response
-
-a = WikiWalker()
-a.read_page('werewolf')
